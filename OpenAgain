@@ -1,0 +1,17 @@
+
+To get a new public URL next time (free Quick Tunnel), you only need these steps:
+
+Start your app locally
+In PowerShell:
+cd c:\Users\Acer\Desktop\COPILOT\CafeApp
+npm start
+Keep this terminal open.
+Start the Cloudflare tunnel (this generates the URL)
+Open a second PowerShell window and run:
+cloudflared tunnel --url http://localhost:3000
+Copy the https://....trycloudflare.com link it prints
+That’s your new URL. Share that link.
+Notes:
+
+If you stop npm start or close the tunnel window, the URL stops working.
+The URL changes every time you run the tunnel again (that’s normal for the free “no domain” method).
