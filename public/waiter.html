@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CafeApp — Ordering</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="brand">
+          <h1>Ordering Screen</h1>
+          <p>Place order → sends to kitchen instantly</p>
+        </div>
+        <div class="split no-print" style="justify-content: flex-end;">
+          <button id="back">Back</button>
+          <button class="danger" id="reset">Reset</button>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <div class="panel">
+          <div class="row">
+            <label for="table">Table / Token</label>
+            <input id="table" placeholder="e.g. Table 4" />
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <label for="note">Note (optional)</label>
+            <textarea id="note" placeholder="e.g. no sugar, extra hot"></textarea>
+          </div>
+
+          <hr />
+
+          <div class="kpi" id="kpi"></div>
+
+          <div style="margin-top: 10px; overflow:auto;">
+            <table class="table" id="menuTable">
+              <thead>
+                <tr>
+                  <th style="width: 55%;">Item</th>
+                  <th style="width: 15%;">Price</th>
+                  <th style="width: 30%;">Qty</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="actions" style="margin-top: 14px;">
+            <button class="primary" id="submit">Place Order</button>
+          </div>
+
+          <p class="small" id="status" style="margin-top: 10px;"></p>
+        </div>
+
+        <div class="panel">
+          <h2 style="margin: 0 0 10px; font-size: 16px;">Last Submitted Order</h2>
+          <div id="lastOrder" class="small">No orders yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function money(n) {
+        return (Math.round(n * 100) / 100).toFixed(2);
+      }
+
+      const qs = new URLSearchParams(window.location.search);
+      const tableInput = document.getElementById('table');
+      tableInput.value = qs.get('table') || '';
+
+      const state = {
+        menu: [],
+        taxRate: 0,
+      };
+
+      function setStatus(msg) {
+        document.getElementById('status').textContent = msg || '';
+      }
+
+      function renderKpi() {
+        const kpi = document.getElementById('kpi');
+        kpi.innerHTML = '';
+
+        const pills = [
+          `Tax: ${(state.taxRate * 100).toFixed(0)}%`,
+          `Kitchen screen updates live`,
+        ];
+        for (const t of pills) {
+          const el = document.createElement('div');
+          el.className = 'pill';
+          el.textContent = t;
+          kpi.appendChild(el);
+        }
+      }
+
+      function renderMenu() {
+        const tbody = document.querySelector('#menuTable tbody');
+        tbody.innerHTML = '';
+
+        for (const item of state.menu) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.name}</td>
+            <td>$${money(item.price)}</td>
+            <td>
+              <input type="number" min="0" step="1" value="0" data-menu-id="${item.id}" />
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+
+      function getOrderPayload() {
+        const table = tableInput.value.trim();
+        const note = document.getElementById('note').value.trim();
+        const inputs = [...document.querySelectorAll('input[data-menu-id]')];
+        const items = inputs
+          .map((el) => ({ menuId: el.dataset.menuId, qty: Number(el.value) }))
+          .filter((it) => Number.isFinite(it.qty) && it.qty > 0);
+        return { table, note, items };
+      }
+
+      async function loadMenu() {
+        const res = await fetch('/api/menu');
+        const data = await res.json();
+        state.menu = data.menu;
+        state.taxRate = data.taxRate;
+        renderKpi();
+        renderMenu();
+      }
+
+      async function placeOrder() {
+        setStatus('Placing order...');
+        const payload = getOrderPayload();
+
+        const res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus('');
+          alert(data.error || 'Failed to place order');
+          return;
+        }
+
+        const o = data.order;
+        document.getElementById('lastOrder').innerHTML = `
+          <div class="card">
+            <h3>Order #${o.id}</h3>
+            <div class="meta">
+              <div><span class="badge new">new</span></div>
+              <div>Table: <b>${o.table || '-'}</b></div>
+              <div>Time: ${new Date(o.createdAt).toLocaleString()}</div>
+            </div>
+            <div>
+              ${o.items.map((i) => `<div>${i.qty}× ${i.name} — $${money(i.lineTotal)}</div>`).join('')}
+            </div>
+            <hr />
+            <div class="small">Subtotal: $${money(o.subtotal)} | Tax: $${money(o.tax)} | Total: <b>$${money(o.total)}</b></div>
+            ${o.note ? `<div class="small" style="margin-top:8px;">Note: ${o.note}</div>` : ''}
+          </div>
+        `;
+
+        // reset quantities
+        for (const el of document.querySelectorAll('input[data-menu-id]')) el.value = '0';
+        document.getElementById('note').value = '';
+        setStatus(`Order #${o.id} sent to kitchen.`);
+      }
+
+      document.getElementById('submit').addEventListener('click', placeOrder);
+      document.getElementById('reset').addEventListener('click', () => {
+        for (const el of document.querySelectorAll('input[data-menu-id]')) el.value = '0';
+        document.getElementById('note').value = '';
+        setStatus('');
+      });
+      document.getElementById('back').addEventListener('click', () => {
+        window.location.href = '/';
+      });
+
+      loadMenu().catch((e) => {
+        console.error(e);
+        alert('Failed to load menu');
+      });
+    </script>
+  </body>
+</html>

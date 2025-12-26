@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CafeApp — Kitchen</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header no-print">
+        <div class="brand">
+          <h1>Kitchen Screen</h1>
+          <p>Live orders + status + billing</p>
+        </div>
+        <div class="split" style="justify-content: flex-end;">
+          <button id="back">Back</button>
+          <button id="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <div class="panel">
+          <div class="kpi" id="kpi"></div>
+          <div id="orders" style="margin-top: 12px;"></div>
+        </div>
+
+        <div class="panel">
+          <h2 style="margin: 0 0 10px; font-size: 16px;">Bill / Receipt</h2>
+          <div class="small" style="margin-bottom: 10px;">Select an order → generate bill → print if needed.</div>
+          <div id="billArea" class="small">No bill selected.</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      function money(n) {
+        return (Math.round(n * 100) / 100).toFixed(2);
+      }
+
+      const state = {
+        orders: [],
+        taxRate: 0,
+      };
+
+      function badgeClass(status) {
+        return ['badge', status].join(' ');
+      }
+
+      function setKpi() {
+        const el = document.getElementById('kpi');
+        const counts = {
+          new: state.orders.filter((o) => o.status === 'new').length,
+          accepted: state.orders.filter((o) => o.status === 'accepted').length,
+          ready: state.orders.filter((o) => o.status === 'ready').length,
+          billed: state.orders.filter((o) => o.status === 'billed').length,
+        };
+        el.innerHTML = '';
+        const pills = [
+          `New: ${counts.new}`,
+          `Accepted: ${counts.accepted}`,
+          `Ready: ${counts.ready}`,
+          `Billed: ${counts.billed}`,
+          `Tax: ${(state.taxRate * 100).toFixed(0)}%`,
+        ];
+        for (const t of pills) {
+          const p = document.createElement('div');
+          p.className = 'pill';
+          p.textContent = t;
+          el.appendChild(p);
+        }
+      }
+
+      function renderOrders() {
+        setKpi();
+        const root = document.getElementById('orders');
+        if (state.orders.length === 0) {
+          root.innerHTML = '<div class="small">No orders yet.</div>';
+          return;
+        }
+
+        root.innerHTML = '';
+        for (const o of state.orders) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `
+            <h3>Order #${o.id}</h3>
+            <div class="meta">
+              <div><span class="${badgeClass(o.status)}">${o.status}</span></div>
+              <div>Table: <b>${o.table || '-'}</b></div>
+              <div>Time: ${new Date(o.createdAt).toLocaleString()}</div>
+            </div>
+            <div>
+              ${o.items.map((i) => `<div>${i.qty}× ${i.name}</div>`).join('')}
+            </div>
+            ${o.note ? `<div class="small" style="margin-top:8px;">Note: ${o.note}</div>` : ''}
+            <div class="actions no-print">
+              <button data-action="accept" data-id="${o.id}">Accept</button>
+              <button data-action="ready" data-id="${o.id}">Ready</button>
+              <button class="primary" data-action="bill" data-id="${o.id}">Make Bill</button>
+              <button data-action="billed" data-id="${o.id}">Mark Billed</button>
+            </div>
+          `;
+          root.appendChild(card);
+        }
+      }
+
+      async function loadMenuMeta() {
+        const res = await fetch('/api/menu');
+        const data = await res.json();
+        state.taxRate = data.taxRate;
+      }
+
+      async function loadOrders() {
+        const res = await fetch('/api/orders');
+        const data = await res.json();
+        state.orders = data.orders;
+        renderOrders();
+      }
+
+      async function updateStatus(id, status) {
+        const res = await fetch(`/api/orders/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to update status');
+          return;
+        }
+        // optimistic local update (server also pushes socket update)
+        const idx = state.orders.findIndex((o) => o.id === id);
+        if (idx >= 0) state.orders[idx] = data.order;
+        renderOrders();
+      }
+
+      function renderBill(order) {
+        const area = document.getElementById('billArea');
+        if (!order) {
+          area.className = 'small';
+          area.textContent = 'No bill selected.';
+          return;
+        }
+
+        area.className = 'print';
+        area.innerHTML = `
+          <div class="no-print" style="display:flex; gap:10px; justify-content:flex-end; margin-bottom:10px;">
+            <button onclick="window.print()">Print</button>
+          </div>
+          <h2>Cafe Bill</h2>
+          <div class="muted">Order #${order.id} • ${new Date(order.createdAt).toLocaleString()}</div>
+          <div class="muted">Table: ${order.table || '-'}</div>
+          <div style="height:10px;"></div>
+          <table>
+            <thead>
+              <tr>
+                <th align="left">Item</th>
+                <th align="right">Qty</th>
+                <th align="right">Price</th>
+                <th align="right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${order.items
+                .map(
+                  (i) => `
+                    <tr>
+                      <td>${i.name}</td>
+                      <td align="right">${i.qty}</td>
+                      <td align="right">$${money(i.price)}</td>
+                      <td align="right">$${money(i.lineTotal)}</td>
+                    </tr>
+                  `
+                )
+                .join('')}
+            </tbody>
+            <tfoot>
+              <tr><td colspan="3" align="right">Subtotal</td><td align="right">$${money(order.subtotal)}</td></tr>
+              <tr><td colspan="3" align="right">Tax</td><td align="right">$${money(order.tax)}</td></tr>
+              <tr><td colspan="3" align="right">Total</td><td align="right">$${money(order.total)}</td></tr>
+            </tfoot>
+          </table>
+          ${order.note ? `<div class="muted" style="margin-top:10px;">Note: ${order.note}</div>` : ''}
+        `;
+      }
+
+      document.getElementById('orders').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+
+        const id = btn.dataset.id;
+        const action = btn.dataset.action;
+        const order = state.orders.find((o) => o.id === id);
+
+        if (action === 'bill') {
+          renderBill(order);
+          return;
+        }
+
+        await updateStatus(id, action);
+      });
+
+      document.getElementById('refresh').addEventListener('click', loadOrders);
+      document.getElementById('back').addEventListener('click', () => {
+        window.location.href = '/';
+      });
+
+      // Live updates
+      const socket = io();
+      socket.on('order:new', (order) => {
+        state.orders = [order, ...state.orders];
+        renderOrders();
+      });
+      socket.on('order:update', (order) => {
+        const idx = state.orders.findIndex((o) => o.id === order.id);
+        if (idx >= 0) state.orders[idx] = order;
+        else state.orders = [order, ...state.orders];
+        // keep most recent first
+        state.orders.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        renderOrders();
+      });
+
+      Promise.all([loadMenuMeta(), loadOrders()]).catch((e) => {
+        console.error(e);
+        alert('Failed to load kitchen screen');
+      });
+    </script>
+  </body>
+</html>

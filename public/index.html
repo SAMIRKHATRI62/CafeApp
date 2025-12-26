@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CafeApp — Login</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="brand">
+          <h1>CafeApp</h1>
+          <p>Waiter iPad ↔ Kitchen computer (MVP)</p>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <div class="panel">
+          <h2 style="margin: 0 0 10px; font-size: 16px;">Customer / Waiter</h2>
+          <p class="small" style="margin-top: 0;">Take an order and send it to the kitchen.</p>
+          <p class="small error" id="globalWarning" style="display:none; margin-top: 0;"></p>
+          <div class="row">
+            <label for="table">Table / Token</label>
+            <input id="table" placeholder="e.g. Table 4" />
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <label for="waiterPass">Passcode (MVP)</label>
+            <input id="waiterPass" type="password" placeholder="enter passcode" />
+            <div class="small">Default: <b>1111</b></div>
+          </div>
+          <div class="row" style="margin-top: 12px;">
+            <button class="primary" id="waiterLogin">Open Ordering Screen</button>
+            <div class="small error" id="waiterError" style="min-height: 16px;"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 style="margin: 0 0 10px; font-size: 16px;">Kitchen</h2>
+          <p class="small" style="margin-top: 0;">See incoming orders and create the bill.</p>
+          <div class="row">
+            <label for="kitchenPass">Passcode (MVP)</label>
+            <input id="kitchenPass" type="password" placeholder="enter passcode" />
+            <div class="small">Default: <b>2222</b></div>
+          </div>
+          <div class="row" style="margin-top: 12px;">
+            <button class="primary" id="kitchenLogin">Open Kitchen Screen</button>
+            <div class="small error" id="kitchenError" style="min-height: 16px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="small" style="margin-top: 16px;">
+        Note: This MVP stores orders in memory. If you restart the server, orders reset.
+      </p>
+    </div>
+
+    <script>
+      const WAITER_PASS = '1111';
+      const KITCHEN_PASS = '2222';
+
+      function nav(url) {
+        window.location.href = url;
+      }
+
+      const globalWarning = document.getElementById('globalWarning');
+      if (window.location.protocol === 'file:') {
+        globalWarning.style.display = 'block';
+        globalWarning.textContent = 'Open this page via http://localhost:3000 (not by double-clicking the HTML file), otherwise navigation may fail.';
+      }
+
+      const waiterError = document.getElementById('waiterError');
+      const kitchenError = document.getElementById('kitchenError');
+
+      function clearErrors() {
+        waiterError.textContent = '';
+        kitchenError.textContent = '';
+      }
+
+      document.getElementById('waiterLogin').addEventListener('click', () => {
+        clearErrors();
+        const pass = document.getElementById('waiterPass').value.trim();
+        const table = document.getElementById('table').value.trim();
+        if (pass !== WAITER_PASS) {
+          waiterError.textContent = 'Wrong passcode for Customer/Waiter (default 1111).';
+          return;
+        }
+        const qs = new URLSearchParams();
+        if (table) qs.set('table', table);
+        nav(`/waiter.html?${qs.toString()}`);
+      });
+
+      document.getElementById('kitchenLogin').addEventListener('click', () => {
+        clearErrors();
+        const pass = document.getElementById('kitchenPass').value.trim();
+        if (pass !== KITCHEN_PASS) {
+          kitchenError.textContent = 'Wrong passcode for Kitchen (default 2222).';
+          return;
+        }
+        nav('/kitchen.html');
+      });
+    </script>
+  </body>
+</html>
